@@ -15,7 +15,7 @@ contract Collectible is ERC721 {
 
     }
 
-    function createCollectible(address _to) public returns (uint256) {
+    function createCollectible(address _to) internal returns (uint256) {
         uint256 newItemId = tokenCounter.current();
         _safeMint(_to, newItemId);
         tokenCounter.increment();
