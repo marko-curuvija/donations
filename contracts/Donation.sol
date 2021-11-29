@@ -84,6 +84,7 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
     /// @notice Donates sent amount to desired campaign
     /// @param _campaignId Id of campaign which will receive donation
     function donate(uint _campaignId) public payable goalNotReached(_campaignId) {
+        require(msg.value > 0, "Value must be greater than 0");
         Campaign storage campaign = campaigns[_campaignId];
         uint donation = msg.value;
         if(campaign.amount + donation > campaign.priceGoal) {
