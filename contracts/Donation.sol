@@ -18,12 +18,10 @@ interface IDonation {
     ) external;
 
     function donate(uint _campaignId) external payable;
-
     function withdraw(uint _campaignId) external;
-
     function isPriceGoalReached(uint _campaignId) external view returns(bool);
-
     function isDateGoalReached(uint _campaignId) external view returns(bool);
+    function getDonatedAmountForCampaign(uint _campaignId) external view returns (uint);
 }
 
 
@@ -53,7 +51,10 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
     /// @dev function that checks if campaign price or date goal has been reached
     modifier goalNotReached(uint _campaignId) {
         Campaign storage campaign = campaigns[_campaignId];
-        require(campaign.dateGoal >= block.timestamp && campaign.priceGoal != campaign.amount);
+        require(
+            campaign.dateGoal >= block.timestamp && campaign.priceGoal != campaign.amount,
+            "Campaign has reached its goal"
+        );
         _;
     }
 
@@ -104,9 +105,11 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
     /// @notice Withdraws collected donations from campaign to owner of campaign
     /// @param _campaignId Id of campaign from which donations will be withdrawn
     function withdraw(uint _campaignId) public nonReentrant {
-        require(msg.sender == campaigns[_campaignId].campaignOwner, "Only campaign owner can withdraw donations");
-        uint valueToWithdraw = campaigns[_campaignId].amount;
-        campaigns[_campaignId].amount = 0;
+        Campaign storage campaign = campaigns[_campaignId];
+        require(msg.sender == campaign.campaignOwner, "Only campaign owner can withdraw donations");
+        require(campaign.amount > 0, "There are no funds to be withdrawn");
+        uint valueToWithdraw = campaign.amount;
+        campaign.amount = 0;
         (bool sent, ) = msg.sender.call{value: valueToWithdraw}("");
         require(sent, "Failed to send Ether");
         emit Withdraw(_campaignId, valueToWithdraw);
@@ -124,5 +127,10 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
     function isDateGoalReached(uint _campaignId) public view returns(bool) {
         Campaign storage campaign = campaigns[_campaignId];
         return campaign.dateGoal <= block.timestamp;
+    }
+
+    function getDonatedAmountForCampaign(uint _campaignId) public view returns (uint) {
+        Campaign storage campaign = campaigns[_campaignId];
+        return(campaign.donors[msg.sender]);
     }
 }
