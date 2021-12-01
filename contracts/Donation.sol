@@ -1,8 +1,6 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "hardhat/console.sol";
-
 import "./Collectible.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -27,7 +25,7 @@ interface IDonation {
 
 /// @title Contract for donations
 /// @author Marko Curuvija
-contract Donation is Ownable, ReentrancyGuard, Collectible {
+contract Donation is IDonation, Ownable, ReentrancyGuard {
 
     using Counters for Counters.Counter;
     struct Campaign {
@@ -42,6 +40,7 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
 
     Counters.Counter campaignId;
     mapping(uint => Campaign) public campaigns;
+    Collectible public collectible;
 
     event Donate(address _from, uint _campaignId, uint _amount);
     event CreateCampaign(string _name, uint _campaignId);
@@ -52,10 +51,16 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
     modifier goalNotReached(uint _campaignId) {
         Campaign storage campaign = campaigns[_campaignId];
         require(
-            campaign.dateGoal >= block.timestamp && campaign.priceGoal != campaign.amount,
-            "Campaign has reached its goal"
+            campaign.dateGoal >= block.timestamp, "Campaign has reached date goal"
+        );
+        require(
+            campaign.priceGoal != campaign.amount, "Campaign has reached price goal"
         );
         _;
+    }
+
+    constructor() {
+        collectible = new Collectible();
     }
 
     /// @notice function that allows contract owner to create new campaign
@@ -70,7 +75,7 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
         string memory _description,
         uint96 _dateGoal,
         uint _priceGoal
-    ) public onlyOwner {
+    ) public override onlyOwner {
         uint id = campaignId.current();
         Campaign storage campaign = campaigns[id];
         campaign.campaignOwner = _campaignOwner;
@@ -84,18 +89,19 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
 
     /// @notice Donates sent amount to desired campaign
     /// @param _campaignId Id of campaign which will receive donation
-    function donate(uint _campaignId) public payable goalNotReached(_campaignId) {
+    function donate(uint _campaignId) public override payable goalNotReached(_campaignId) {
         require(msg.value > 0, "Value must be greater than 0");
         Campaign storage campaign = campaigns[_campaignId];
         uint donation = msg.value;
         if(campaign.amount + donation > campaign.priceGoal) {
             donation = campaign.priceGoal - campaign.amount;
             uint change = msg.value - donation;
-            payable(msg.sender).transfer(change);
+            (bool sent,) = msg.sender.call{value: change}("");
+            require(sent, "Failed to send Ether");
             emit PriceGoalReached(_campaignId, campaign.priceGoal);
         }
         if(campaign.donors[msg.sender] == 0) {
-            Collectible.createCollectible(msg.sender);
+            collectible.createCollectible(msg.sender);
         }
         campaign.amount += donation;
         campaign.donors[msg.sender] += donation;
@@ -104,7 +110,7 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
 
     /// @notice Withdraws collected donations from campaign to owner of campaign
     /// @param _campaignId Id of campaign from which donations will be withdrawn
-    function withdraw(uint _campaignId) public nonReentrant {
+    function withdraw(uint _campaignId) public override nonReentrant {
         Campaign storage campaign = campaigns[_campaignId];
         require(msg.sender == campaign.campaignOwner, "Only campaign owner can withdraw donations");
         require(campaign.amount > 0, "There are no funds to be withdrawn");
@@ -117,19 +123,19 @@ contract Donation is Ownable, ReentrancyGuard, Collectible {
 
     /// @notice Returns information if price goal of campaign is reached
     /// @param _campaignId Id of campaign
-    function isPriceGoalReached(uint _campaignId) public view returns(bool) {
+    function isPriceGoalReached(uint _campaignId) public override view returns(bool) {
         Campaign storage campaign = campaigns[_campaignId];
         return campaign.priceGoal - campaign.amount <= 0;
     }
 
     /// @notice Returns information if date goal of campaign has passed
     /// @param _campaignId Id of campaign
-    function isDateGoalReached(uint _campaignId) public view returns(bool) {
+    function isDateGoalReached(uint _campaignId) public override view returns(bool) {
         Campaign storage campaign = campaigns[_campaignId];
         return campaign.dateGoal <= block.timestamp;
     }
 
-    function getDonatedAmountForCampaign(uint _campaignId) public view returns (uint) {
+    function getDonatedAmountForCampaign(uint _campaignId) public override view returns (uint) {
         Campaign storage campaign = campaigns[_campaignId];
         return(campaign.donors[msg.sender]);
     }
