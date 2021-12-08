@@ -1,28 +1,36 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { getCurrentTimestamp } from "hardhat/internal/hardhat-network/provider/utils/getCurrentTimestamp";
-import { Contract } from "ethers";
+import { Collectible, Donation, IERC20 } from "../typechain";
+import { BigNumberish } from "ethers";
 
 describe("Donation", function () {
   let Donation;
-  let donation: Contract;
-  let collectible: Contract;
+  let donation: Donation;
+  let daiToken: IERC20;
+  let collectible: Collectible;
   let owner: SignerWithAddress;
   let address1: SignerWithAddress;
+  let dateGoal: BigNumberish;
 
   const name = "Campaign 1";
   const description = "description";
-  const dateGoal = getCurrentTimestamp() + 600;
   const priceGoal = ethers.utils.parseEther("0.005");
   const donationAmount = ethers.utils.parseEther("0.002");
+  const hre = require("hardhat");
+  const daiTokenAddress = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
+  const daiWalletAddress = "0x1e3d6eab4bcf24bcd04721caa11c478a2e59852d";
+  const wethTokenAddress = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+  const swapRouterAddress = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
 
   beforeEach(async () => {
     Donation = await ethers.getContractFactory("Donation");
     [owner, address1] = await ethers.getSigners();
-    donation = await Donation.deploy();
-    const collectibleAddress = await donation.collectible();
-    collectible = await ethers.getContractAt("Collectible", collectibleAddress);
+    donation = await Donation.deploy(swapRouterAddress, wethTokenAddress);
+
+    const blockNum = await ethers.provider.getBlockNumber();
+    const block = await ethers.provider.getBlock(blockNum);
+    dateGoal = block.timestamp + 600;
 
     await donation.createCampaign(
       owner.address,
@@ -123,12 +131,46 @@ describe("Donation", function () {
       expect(() => donate).to.changeEtherBalance(donation, donationAmount);
     });
 
+    it("Should be able to donate non native tokens to campaign", async function () {
+      daiToken = await ethers.getContractAt("IERC20", daiTokenAddress);
+      await hre.network.provider.request({
+        method: "hardhat_impersonateAccount",
+        params: [daiWalletAddress],
+      });
+      const walletSigner = await ethers.getSigner(daiWalletAddress);
+      await daiToken
+        .connect(walletSigner)
+        .approve(donation.address, ethers.utils.parseUnits("20", 18));
+      await donation
+        .connect(walletSigner)
+        .donateNonNativeCoins(
+          daiTokenAddress,
+          ethers.utils.parseUnits("20", 18),
+          0
+        );
+      const campaign = await donation.campaigns(0);
+      expect(campaign.amount).to.be.above(0);
+      expect(await donation.provider.getBalance(donation.address)).to.be.above(
+        0
+      );
+    });
+
     it("Should receive NFT after first donation", async function () {
+      const collectibleAddress = await donation.collectible();
+      collectible = (await ethers.getContractAt(
+        "Collectible",
+        collectibleAddress
+      )) as Collectible;
       await donation.connect(address1).donate(0, { value: donationAmount });
       expect(await collectible.ownerOf(0)).to.be.equal(address1.address);
     });
 
     it("Should not receive NFT if account already donated to campaign", async function () {
+      const collectibleAddress = await donation.collectible();
+      collectible = (await ethers.getContractAt(
+        "Collectible",
+        collectibleAddress
+      )) as Collectible;
       await donation.connect(address1).donate(0, { value: donationAmount });
       await donation.connect(address1).donate(0, { value: donationAmount });
       expect(collectible.ownerOf(1)).to.be.revertedWith(

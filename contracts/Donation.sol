@@ -1,10 +1,15 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "./Collectible.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
+import './Collectible.sol';
+import '@openzeppelin/contracts/security/ReentrancyGuard.sol';
+import '@openzeppelin/contracts/access/Ownable.sol';
+import '@openzeppelin/contracts/utils/Counters.sol';
+import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
+import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
+import 'advanced-weth/contracts/interfaces/IWETH9.sol';
+
+import "hardhat/console.sol";
 
 interface IDonation {
     function createCampaign(
@@ -16,12 +21,12 @@ interface IDonation {
     ) external;
 
     function donate(uint _campaignId) external payable;
+    function donateNonNativeCoins(address _tokenAddress, uint amount, uint campaignId) external;
     function withdraw(uint _campaignId) external;
     function isPriceGoalReached(uint _campaignId) external view returns(bool);
     function isDateGoalReached(uint _campaignId) external view returns(bool);
     function getDonatedAmountForCampaign(uint _campaignId) external view returns (uint);
 }
-
 
 /// @title Contract for donations
 /// @author Marko Curuvija
@@ -38,9 +43,12 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         mapping(address => uint) donors;
     }
 
+    address payable immutable wethAddress;
     Counters.Counter campaignId;
     mapping(uint => Campaign) public campaigns;
-    Collectible public collectible;
+    Collectible public immutable collectible;
+    ISwapRouter public immutable swapRouter;
+    IWETH9 public immutable weth;
 
     event Donate(address _from, uint _campaignId, uint _amount);
     event CreateCampaign(string _name, uint _campaignId);
@@ -59,8 +67,11 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         _;
     }
 
-    constructor() {
+    constructor(ISwapRouter _swapRouter, IWETH9 _weth9) {
         collectible = new Collectible();
+        swapRouter = _swapRouter;
+        weth = IWETH9(_weth9);
+        wethAddress = payable(_weth9);
     }
 
     /// @notice function that allows contract owner to create new campaign
@@ -93,14 +104,37 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         require(msg.value > 0, "Value must be greater than 0");
         Campaign storage campaign = campaigns[_campaignId];
         uint donation = msg.value;
-        if(campaign.amount + donation > campaign.priceGoal) {
+        if (campaign.amount + donation > campaign.priceGoal) {
             donation = campaign.priceGoal - campaign.amount;
             uint change = msg.value - donation;
             (bool sent,) = msg.sender.call{value: change}("");
             require(sent, "Failed to send Ether");
             emit PriceGoalReached(_campaignId, campaign.priceGoal);
         }
-        if(campaign.donors[msg.sender] == 0) {
+        if (campaign.donors[msg.sender] == 0) {
+            collectible.createCollectible(msg.sender);
+        }
+        campaign.amount += donation;
+        campaign.donors[msg.sender] += donation;
+        emit Donate(msg.sender, _campaignId, donation);
+    }
+
+    /// @notice Donates non native coins to campaign
+    /// @param _tokenAddress address of ERC20 token that will be donated
+    /// @param _amount amount of tokens that will be donated
+    /// @param _campaignId Id of campaign which will receive donation
+    function donateNonNativeCoins(address _tokenAddress, uint _amount, uint _campaignId) public override goalNotReached(_campaignId) {
+        require(_amount > 0, "Value must be greater than 0");
+        Campaign storage campaign = campaigns[_campaignId];
+        uint donation = swapTokens(_tokenAddress, wethAddress, msg.sender, address(this), _amount);
+        if (campaign.amount + donation > campaign.priceGoal) {
+            uint change = donation - (campaign.priceGoal - campaign.amount);
+            swapTokens(wethAddress, _tokenAddress, address(this), msg.sender, change);
+            donation -= change;
+            emit PriceGoalReached(_campaignId, campaign.priceGoal);
+        }
+        weth.withdraw(donation);
+        if (campaign.donors[msg.sender] == 0) {
             collectible.createCollectible(msg.sender);
         }
         campaign.amount += donation;
@@ -138,5 +172,28 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
     function getDonatedAmountForCampaign(uint _campaignId) public override view returns (uint) {
         Campaign storage campaign = campaigns[_campaignId];
         return(campaign.donors[msg.sender]);
+    }
+
+    function swapTokens(address _tokenIn, address _tokenOut, address _sender, address _recipient, uint amount) private returns(uint amountOut) {
+        TransferHelper.safeTransferFrom(_tokenIn, _sender, _recipient, amount);
+        TransferHelper.safeApprove(_tokenIn, address(swapRouter), amount);
+
+        ISwapRouter.ExactInputSingleParams memory params =
+        ISwapRouter.ExactInputSingleParams({
+        tokenIn: _tokenIn,
+        tokenOut: _tokenOut,
+        fee: 3000,
+        recipient: _recipient,
+        deadline: block.timestamp + 60,
+        amountIn: amount,
+        amountOutMinimum: 0,
+        sqrtPriceLimitX96: 0
+        });
+
+        amountOut = swapRouter.exactInputSingle(params);
+    }
+
+    receive() external payable {
+
     }
 }

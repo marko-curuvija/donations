@@ -16,6 +16,12 @@ module.exports = {
       url: `https://eth-rinkeby.alchemyapi.io/v2/${process.env.RINKEBY_ALCHEMY_API_KEY}`,
       accounts: [process.env.RINKEBY_PRIVATE_KEY],
     },
+    hardhat: {
+      forking: {
+        url: `https://eth-mainnet.alchemyapi.io/v2/${process.env.RINKEBY_ALCHEMY_API_KEY}`,
+        blockNumber: 13761155,
+      },
+    },
   },
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY,
