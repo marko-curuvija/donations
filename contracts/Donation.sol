@@ -10,23 +10,7 @@ import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
 import 'advanced-weth/contracts/interfaces/IWETH9.sol';
 
 import "hardhat/console.sol";
-
-interface IDonation {
-    function createCampaign(
-        address payable _campaignOwner,
-        string memory _name,
-        string memory _description,
-        uint96 _dateGoal,
-        uint _priceGoal
-    ) external;
-
-    function donate(uint _campaignId) external payable;
-    function donateNonNativeCoins(address _tokenAddress, uint amount, uint campaignId) external;
-    function withdraw(uint _campaignId) external;
-    function isPriceGoalReached(uint _campaignId) external view returns(bool);
-    function isDateGoalReached(uint _campaignId) external view returns(bool);
-    function getDonatedAmountForCampaign(uint _campaignId) external view returns (uint);
-}
+import "./IDonation.sol";
 
 /// @title Contract for donations
 /// @author Marko Curuvija
@@ -70,7 +54,7 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
     constructor(ISwapRouter _swapRouter, IWETH9 _weth9) {
         collectible = new Collectible();
         swapRouter = _swapRouter;
-        weth = IWETH9(_weth9);
+        weth = _weth9;
         wethAddress = payable(_weth9);
     }
 
