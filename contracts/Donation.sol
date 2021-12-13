@@ -106,14 +106,42 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
     /// @notice Donates non native coins to campaign
     /// @param _tokenAddress address of ERC20 token that will be donated
     /// @param _amount amount of tokens that will be donated
+    /// @param _fee Pool fee that will be used on uniswap
+    /// @param _deadline Unix timestamp of deadline for swap to happen
+    /// @param _sqrtPriceLimitX96 Used for uniswap swap
     /// @param _campaignId Id of campaign which will receive donation
-    function donateNonNativeCoins(address _tokenAddress, uint _amount, uint _campaignId) public override goalNotReached(_campaignId) {
+    function donateNonNativeCoins(
+        address _tokenAddress,
+        uint _amount,
+        uint24 _fee,
+        uint _deadline,
+        uint160 _sqrtPriceLimitX96,
+        uint _campaignId
+    ) public override goalNotReached(_campaignId) {
         require(_amount > 0, "Value must be greater than 0");
         Campaign storage campaign = campaigns[_campaignId];
-        uint donation = swapTokens(_tokenAddress, wethAddress, msg.sender, address(this), _amount);
+        uint donation = _swapTokens(
+            _tokenAddress,
+            wethAddress,
+            msg.sender,
+            address(this),
+            _amount,
+            _fee,
+            _deadline,
+            _sqrtPriceLimitX96
+        );
         if (campaign.amount + donation > campaign.priceGoal) {
             uint change = donation - (campaign.priceGoal - campaign.amount);
-            swapTokens(wethAddress, _tokenAddress, address(this), msg.sender, change);
+            _swapTokens(
+                wethAddress,
+                _tokenAddress,
+                address(this),
+                msg.sender,
+                change,
+                _fee,
+                _deadline,
+                _sqrtPriceLimitX96
+            );
             donation -= change;
             emit PriceGoalReached(_campaignId, campaign.priceGoal);
         }
@@ -158,20 +186,29 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         return (campaign.donors[msg.sender]);
     }
 
-    function swapTokens(address _tokenIn, address _tokenOut, address _sender, address _recipient, uint amount) private returns (uint amountOut) {
-        TransferHelper.safeTransferFrom(_tokenIn, _sender, _recipient, amount);
-        TransferHelper.safeApprove(_tokenIn, address(swapRouter), amount);
+    function _swapTokens(
+        address _tokenIn,
+        address _tokenOut,
+        address _sender,
+        address _recipient,
+        uint _amount,
+        uint24 _fee,
+        uint _deadline,
+        uint160 _sqrtPriceLimitX96
+    ) private returns (uint amountOut) {
+        TransferHelper.safeTransferFrom(_tokenIn, _sender, _recipient, _amount);
+        TransferHelper.safeApprove(_tokenIn, address(swapRouter), _amount);
 
         ISwapRouter.ExactInputSingleParams memory params =
         ISwapRouter.ExactInputSingleParams({
         tokenIn : _tokenIn,
         tokenOut : _tokenOut,
-        fee : 3000,
+        fee : _fee,
         recipient : _recipient,
-        deadline : block.timestamp + 60,
-        amountIn : amount,
+        deadline : _deadline,
+        amountIn : _amount,
         amountOutMinimum : 0,
-        sqrtPriceLimitX96 : 0
+        sqrtPriceLimitX96 : _sqrtPriceLimitX96
         });
 
         amountOut = swapRouter.exactInputSingle(params);

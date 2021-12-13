@@ -11,7 +11,14 @@ interface IDonation {
     ) external;
 
     function donate(uint _campaignId) external payable;
-    function donateNonNativeCoins(address _tokenAddress, uint amount, uint campaignId) external;
+    function donateNonNativeCoins(
+        address _tokenAddress,
+        uint _amount,
+        uint24 _fee,
+        uint _deadline,
+        uint160 _sqrtPriceLimitX96,
+        uint _campaignId
+    ) external;
     function withdraw(uint _campaignId) external;
     function isPriceGoalReached(uint _campaignId) external view returns(bool);
     function isDateGoalReached(uint _campaignId) external view returns(bool);

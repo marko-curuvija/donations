@@ -3,6 +3,7 @@ import { ethers, network } from "hardhat";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Collectible, Donation, IERC20 } from "../typechain";
 import { BigNumberish } from "ethers";
+import {getCurrentTimestamp} from "hardhat/internal/hardhat-network/provider/utils/getCurrentTimestamp";
 
 describe("Donation", function () {
   let Donation;
@@ -146,6 +147,9 @@ describe("Donation", function () {
         .donateNonNativeCoins(
           daiTokenAddress,
           ethers.utils.parseUnits("20", 18),
+          500,
+          getCurrentTimestamp(),
+          0,
           0
         );
       const campaign = await donation.campaigns(0);
