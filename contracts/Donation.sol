@@ -2,12 +2,12 @@
 pragma solidity ^0.8.0;
 
 import './Collectible.sol';
+import './IWETH9.sol';
 import '@openzeppelin/contracts/security/ReentrancyGuard.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/utils/Counters.sol';
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
-import 'advanced-weth/contracts/interfaces/IWETH9.sol';
 
 import "hardhat/console.sol";
 import "./IDonation.sol";
@@ -51,11 +51,11 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         _;
     }
 
-    constructor(ISwapRouter _swapRouter, IWETH9 _weth9) {
+    constructor(ISwapRouter _swapRouter, address payable _weth9) {
         collectible = new Collectible();
         swapRouter = _swapRouter;
-        weth = _weth9;
-        wethAddress = payable(_weth9);
+        weth = IWETH9(_weth9);
+        wethAddress = _weth9;
     }
 
     /// @notice function that allows contract owner to create new campaign
@@ -91,7 +91,7 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         if (campaign.amount + donation > campaign.priceGoal) {
             donation = campaign.priceGoal - campaign.amount;
             uint change = msg.value - donation;
-            (bool sent,) = msg.sender.call{value: change}("");
+            (bool sent,) = msg.sender.call{value : change}("");
             require(sent, "Failed to send Ether");
             emit PriceGoalReached(_campaignId, campaign.priceGoal);
         }
@@ -134,44 +134,44 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         require(campaign.amount > 0, "There are no funds to be withdrawn");
         uint valueToWithdraw = campaign.amount;
         campaign.amount = 0;
-        (bool sent, ) = msg.sender.call{value: valueToWithdraw}("");
+        (bool sent,) = msg.sender.call{value : valueToWithdraw}("");
         require(sent, "Failed to send Ether");
         emit Withdraw(_campaignId, valueToWithdraw);
     }
 
     /// @notice Returns information if price goal of campaign is reached
     /// @param _campaignId Id of campaign
-    function isPriceGoalReached(uint _campaignId) public override view returns(bool) {
+    function isPriceGoalReached(uint _campaignId) public override view returns (bool) {
         Campaign storage campaign = campaigns[_campaignId];
         return campaign.priceGoal - campaign.amount <= 0;
     }
 
     /// @notice Returns information if date goal of campaign has passed
     /// @param _campaignId Id of campaign
-    function isDateGoalReached(uint _campaignId) public override view returns(bool) {
+    function isDateGoalReached(uint _campaignId) public override view returns (bool) {
         Campaign storage campaign = campaigns[_campaignId];
         return campaign.dateGoal <= block.timestamp;
     }
 
     function getDonatedAmountForCampaign(uint _campaignId) public override view returns (uint) {
         Campaign storage campaign = campaigns[_campaignId];
-        return(campaign.donors[msg.sender]);
+        return (campaign.donors[msg.sender]);
     }
 
-    function swapTokens(address _tokenIn, address _tokenOut, address _sender, address _recipient, uint amount) private returns(uint amountOut) {
+    function swapTokens(address _tokenIn, address _tokenOut, address _sender, address _recipient, uint amount) private returns (uint amountOut) {
         TransferHelper.safeTransferFrom(_tokenIn, _sender, _recipient, amount);
         TransferHelper.safeApprove(_tokenIn, address(swapRouter), amount);
 
         ISwapRouter.ExactInputSingleParams memory params =
         ISwapRouter.ExactInputSingleParams({
-        tokenIn: _tokenIn,
-        tokenOut: _tokenOut,
-        fee: 3000,
-        recipient: _recipient,
-        deadline: block.timestamp + 60,
-        amountIn: amount,
-        amountOutMinimum: 0,
-        sqrtPriceLimitX96: 0
+        tokenIn : _tokenIn,
+        tokenOut : _tokenOut,
+        fee : 3000,
+        recipient : _recipient,
+        deadline : block.timestamp + 60,
+        amountIn : amount,
+        amountOutMinimum : 0,
+        sqrtPriceLimitX96 : 0
         });
 
         amountOut = swapRouter.exactInputSingle(params);
