@@ -2,8 +2,12 @@ import { expect } from "chai";
 import { ethers, network } from "hardhat";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Collectible, Donation, IERC20 } from "../typechain";
-import { BigNumberish } from "ethers";
-import {getCurrentTimestamp} from "hardhat/internal/hardhat-network/provider/utils/getCurrentTimestamp";
+import { BigNumber, BigNumberish } from "ethers";
+import { getCurrentTimestamp } from "hardhat/internal/hardhat-network/provider/utils/getCurrentTimestamp";
+import { AlphaRouter, ChainId } from "@uniswap/smart-order-router";
+import { CurrencyAmount, Percent, Token, TradeType } from "@uniswap/sdk-core";
+import { SwapOptions } from "@uniswap/smart-order-router/build/main/src/routers/router";
+import JSBI from "jsbi";
 
 describe("Donation", function () {
   let Donation;
@@ -23,6 +27,12 @@ describe("Donation", function () {
   const daiWalletAddress = "0x1e3d6eab4bcf24bcd04721caa11c478a2e59852d";
   const wethTokenAddress = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
   const swapRouterAddress = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
+  const router = new AlphaRouter({
+    chainId: 1,
+    provider: ethers.getDefaultProvider(
+      `https://eth-mainnet.alchemyapi.io/v2/${process.env.RINKEBY_ALCHEMY_API_KEY}`
+    ),
+  });
 
   beforeEach(async () => {
     Donation = await ethers.getContractFactory("Donation");
@@ -133,6 +143,52 @@ describe("Donation", function () {
     });
 
     it("Should be able to donate non native tokens to campaign", async function () {
+      const WETH = new Token(
+        1,
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        18,
+        "WETH",
+        "Wrapped Ether"
+      );
+
+      const USDC = new Token(
+        ChainId.MAINNET,
+        "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        6,
+        "USDC",
+        "USD//C"
+      );
+
+      const usdcAmount = CurrencyAmount.fromRawAmount(USDC, 12000000);
+
+      const options: SwapOptions = {
+        recipient: donation.address,
+        slippageTolerance: new Percent(3, 100),
+        deadline: 100,
+      };
+
+      console.log("pre routera");
+      const route = await router.route(
+        usdcAmount,
+        WETH,
+        TradeType.EXACT_INPUT,
+        options
+      );
+      console.log(`Quote Exact In: ${route!.quote.toFixed(2)}`);
+      console.log(
+        `Gas Adjusted Quote In: ${route!.quoteGasAdjusted.toFixed(2)}`
+      );
+      console.log(`Gas Used USD: ${route!.estimatedGasUsedUSD.toFixed(6)}`);
+
+      const transaction = {
+        data: route!.methodParameters!.calldata,
+        to: "0x075B36dE1Bd11cb361c5B3B1E80A9ab0e7aa8a60",
+        value: BigNumber.from(route!.methodParameters!.value),
+        from: donation.address,
+        gasPrice: BigNumber.from(route!.gasPriceWei),
+      };
+      console.log(transaction);
+
       daiToken = await ethers.getContractAt("IERC20", daiTokenAddress);
       await hre.network.provider.request({
         method: "hardhat_impersonateAccount",

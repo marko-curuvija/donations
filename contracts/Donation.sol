@@ -2,15 +2,13 @@
 pragma solidity ^0.8.0;
 
 import './Collectible.sol';
-import './IWETH9.sol';
+import './IDonation.sol';
 import '@openzeppelin/contracts/security/ReentrancyGuard.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/utils/Counters.sol';
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
-
-import "hardhat/console.sol";
-import "./IDonation.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/IPeripheryPayments.sol";
 
 /// @title Contract for donations
 /// @author Marko Curuvija
@@ -32,7 +30,6 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
     mapping(uint => Campaign) public campaigns;
     Collectible public immutable collectible;
     ISwapRouter public immutable swapRouter;
-    IWETH9 public immutable weth;
 
     event Donate(address _from, uint _campaignId, uint _amount);
     event CreateCampaign(string _name, uint _campaignId);
@@ -54,7 +51,6 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
     constructor(ISwapRouter _swapRouter, address payable _weth9) {
         collectible = new Collectible();
         swapRouter = _swapRouter;
-        weth = IWETH9(_weth9);
         wethAddress = _weth9;
     }
 
@@ -145,7 +141,7 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
             donation -= change;
             emit PriceGoalReached(_campaignId, campaign.priceGoal);
         }
-        weth.withdraw(donation);
+        IPeripheryPayments(address(swapRouter)).unwrapWETH9(donation, address(this));
         if (campaign.donors[msg.sender] == 0) {
             collectible.createCollectible(msg.sender);
         }
@@ -204,7 +200,7 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         tokenIn : _tokenIn,
         tokenOut : _tokenOut,
         fee : _fee,
-        recipient : _recipient,
+        recipient : address(swapRouter),
         deadline : _deadline,
         amountIn : _amount,
         amountOutMinimum : 0,
