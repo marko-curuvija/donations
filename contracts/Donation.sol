@@ -48,18 +48,18 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         _;
     }
 
+    modifier valueAboveZero(uint _value) {
+        require(_value > 0, "Value must be greater than 0");
+        _;
+    }
+
     constructor(ISwapRouter _swapRouter, address payable _weth9) {
         collectible = new Collectible();
         swapRouter = _swapRouter;
         wethAddress = _weth9;
     }
 
-    /// @notice function that allows contract owner to create new campaign
-    /// @param _campaignOwner The address of the owner for campaign
-    /// @param _name Name of campaign
-    /// @param _description Description of campaign
-    /// @param _dateGoal Date when campaign will end
-    /// @param _priceGoal Donation goal of campaign
+    /// @inheritdoc IDonation
     function createCampaign(
         address payable _campaignOwner,
         string memory _name,
@@ -78,80 +78,82 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         emit CreateCampaign(_name, id);
     }
 
-    /// @notice Donates sent amount to desired campaign
-    /// @param _campaignId Id of campaign which will receive donation
-    function donate(uint _campaignId) public override payable goalNotReached(_campaignId) {
-        require(msg.value > 0, "Value must be greater than 0");
+    /// @inheritdoc IDonation
+    function donateNative(uint _campaignId) public override payable goalNotReached(_campaignId) valueAboveZero(msg.value) {
         Campaign storage campaign = campaigns[_campaignId];
         uint donation = msg.value;
-        if (campaign.amount + donation > campaign.priceGoal) {
-            donation = campaign.priceGoal - campaign.amount;
-            uint change = msg.value - donation;
+        uint change = calculateChange(msg.value, campaign.amount, campaign.priceGoal, _campaignId);
+        if ( change > 0 ) {
+            donation -= change;
             (bool sent,) = msg.sender.call{value : change}("");
             require(sent, "Failed to send Ether");
-            emit PriceGoalReached(_campaignId, campaign.priceGoal);
         }
-        if (campaign.donors[msg.sender] == 0) {
-            collectible.createCollectible(msg.sender);
-        }
-        campaign.amount += donation;
-        campaign.donors[msg.sender] += donation;
-        emit Donate(msg.sender, _campaignId, donation);
+        sendCollectibleIfFirstDonation(campaign, msg.sender);
+        updateCampaignWithDonation(msg.sender, campaign, donation, _campaignId);
     }
 
-    /// @notice Donates non native coins to campaign
-    /// @param _tokenAddress address of ERC20 token that will be donated
-    /// @param _amount amount of tokens that will be donated
-    /// @param _fee Pool fee that will be used on uniswap
-    /// @param _deadline Unix timestamp of deadline for swap to happen
-    /// @param _sqrtPriceLimitX96 Used for uniswap swap
-    /// @param _campaignId Id of campaign which will receive donation
-    function donateNonNativeCoins(
+    /// @inheritdoc IDonation
+    function donateNonNative(
+        bytes memory _path,
         address _tokenAddress,
         uint _amount,
-        uint24 _fee,
         uint _deadline,
-        uint160 _sqrtPriceLimitX96,
         uint _campaignId
-    ) public override goalNotReached(_campaignId) {
-        require(_amount > 0, "Value must be greater than 0");
+    ) public override goalNotReached(_campaignId) valueAboveZero(_amount){
         Campaign storage campaign = campaigns[_campaignId];
         uint donation = _swapTokens(
+            _path,
             _tokenAddress,
-            wethAddress,
             msg.sender,
             address(this),
             _amount,
-            _fee,
-            _deadline,
-            _sqrtPriceLimitX96
+            _deadline
         );
-        if (campaign.amount + donation > campaign.priceGoal) {
-            uint change = donation - (campaign.priceGoal - campaign.amount);
+        uint change = calculateChange(donation, campaign.amount, campaign.priceGoal, _campaignId);
+        if ( change > 0 ) {
+            donation -= change;
             _swapTokens(
+                _path,
                 wethAddress,
-                _tokenAddress,
                 address(this),
                 msg.sender,
                 change,
-                _fee,
-                _deadline,
-                _sqrtPriceLimitX96
+                _deadline
             );
-            donation -= change;
-            emit PriceGoalReached(_campaignId, campaign.priceGoal);
         }
         IPeripheryPayments(address(swapRouter)).unwrapWETH9(donation, address(this));
-        if (campaign.donors[msg.sender] == 0) {
-            collectible.createCollectible(msg.sender);
-        }
-        campaign.amount += donation;
-        campaign.donors[msg.sender] += donation;
-        emit Donate(msg.sender, _campaignId, donation);
+        sendCollectibleIfFirstDonation(campaign, msg.sender);
+        updateCampaignWithDonation(msg.sender, campaign, donation, _campaignId);
     }
 
-    /// @notice Withdraws collected donations from campaign to owner of campaign
-    /// @param _campaignId Id of campaign from which donations will be withdrawn
+    function sendCollectibleIfFirstDonation(Campaign storage _campaign, address _donor) private {
+        if (_campaign.donors[_donor] == 0) {
+            collectible.createCollectible(_donor);
+        }
+    }
+
+    function updateCampaignWithDonation(
+        address _donor,
+        Campaign storage _campaign,
+        uint _donation,
+        uint _campaignId
+    ) private {
+        _campaign.amount += _donation;
+        _campaign.donors[_donor] += _donation;
+        emit Donate(_donor, _campaignId, _donation);
+    }
+
+    function calculateChange(uint _donation, uint _collected, uint _priceGoal, uint _campaignId) private returns(uint) {
+        uint change = 0;
+        if (_collected + _donation > _priceGoal) {
+            change = _donation - (_priceGoal - _collected);
+            emit PriceGoalReached(_campaignId, _priceGoal);
+        }
+
+        return change;
+    }
+
+    /// @inheritdoc IDonation
     function withdraw(uint _campaignId) public override nonReentrant {
         Campaign storage campaign = campaigns[_campaignId];
         require(msg.sender == campaign.campaignOwner, "Only campaign owner can withdraw donations");
@@ -163,51 +165,45 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         emit Withdraw(_campaignId, valueToWithdraw);
     }
 
-    /// @notice Returns information if price goal of campaign is reached
-    /// @param _campaignId Id of campaign
+    /// @inheritdoc IDonation
     function isPriceGoalReached(uint _campaignId) public override view returns (bool) {
         Campaign storage campaign = campaigns[_campaignId];
         return campaign.priceGoal - campaign.amount <= 0;
     }
 
-    /// @notice Returns information if date goal of campaign has passed
-    /// @param _campaignId Id of campaign
+    /// @inheritdoc IDonation
     function isDateGoalReached(uint _campaignId) public override view returns (bool) {
         Campaign storage campaign = campaigns[_campaignId];
         return campaign.dateGoal <= block.timestamp;
     }
 
+    /// @inheritdoc IDonation
     function getDonatedAmountForCampaign(uint _campaignId) public override view returns (uint) {
         Campaign storage campaign = campaigns[_campaignId];
         return (campaign.donors[msg.sender]);
     }
 
     function _swapTokens(
+        bytes memory _path,
         address _tokenIn,
-        address _tokenOut,
         address _sender,
         address _recipient,
         uint _amount,
-        uint24 _fee,
-        uint _deadline,
-        uint160 _sqrtPriceLimitX96
+        uint _deadline
     ) private returns (uint amountOut) {
         TransferHelper.safeTransferFrom(_tokenIn, _sender, _recipient, _amount);
         TransferHelper.safeApprove(_tokenIn, address(swapRouter), _amount);
 
-        ISwapRouter.ExactInputSingleParams memory params =
-        ISwapRouter.ExactInputSingleParams({
-        tokenIn : _tokenIn,
-        tokenOut : _tokenOut,
-        fee : _fee,
+        ISwapRouter.ExactInputParams memory params =
+        ISwapRouter.ExactInputParams({
+        path: _path,
         recipient : address(swapRouter),
         deadline : _deadline,
         amountIn : _amount,
-        amountOutMinimum : 0,
-        sqrtPriceLimitX96 : _sqrtPriceLimitX96
+        amountOutMinimum : 0
         });
 
-        amountOut = swapRouter.exactInputSingle(params);
+        amountOut = swapRouter.exactInput(params);
     }
 
     receive() external payable {
