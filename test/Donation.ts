@@ -90,14 +90,18 @@ describe("Donation", function () {
 
   describe("Withdraw", function () {
     it("Should withdraw funds from campaign", async function () {
-      await donation.connect(address1).donateNative(0, { value: donationAmount });
+      await donation
+        .connect(address1)
+        .donateNative(0, { value: donationAmount });
 
       const withdraw = donation.withdraw(0);
       expect(() => withdraw).to.changeEtherBalance(owner, donationAmount);
     });
 
     it("Withdraw event should be fired when someone withdraws donations from campaign", async function () {
-      await donation.connect(address1).donateNative(0, { value: donationAmount });
+      await donation
+        .connect(address1)
+        .donateNative(0, { value: donationAmount });
       const withdraw = donation.withdraw(0);
       expect(withdraw)
         .to.emit(donation, "Withdraw")
@@ -105,7 +109,9 @@ describe("Donation", function () {
     });
 
     it("Should not withdraw funds if someone who is not campaignOwner tries to withdraw", async function () {
-      await donation.connect(address1).donateNative(0, { value: donationAmount });
+      await donation
+        .connect(address1)
+        .donateNative(0, { value: donationAmount });
 
       expect(donation.connect(address1).withdraw(0)).to.be.revertedWith(
         "Only campaign owner can withdraw donations"
@@ -169,7 +175,9 @@ describe("Donation", function () {
         "Collectible",
         collectibleAddress
       )) as Collectible;
-      await donation.connect(address1).donateNative(0, { value: donationAmount });
+      await donation
+        .connect(address1)
+        .donateNative(0, { value: donationAmount });
       expect(await collectible.ownerOf(0)).to.be.equal(address1.address);
     });
 
@@ -179,8 +187,12 @@ describe("Donation", function () {
         "Collectible",
         collectibleAddress
       )) as Collectible;
-      await donation.connect(address1).donateNative(0, { value: donationAmount });
-      await donation.connect(address1).donateNative(0, { value: donationAmount });
+      await donation
+        .connect(address1)
+        .donateNative(0, { value: donationAmount });
+      await donation
+        .connect(address1)
+        .donateNative(0, { value: donationAmount });
       expect(collectible.ownerOf(1)).to.be.revertedWith(
         "ERC721: owner query for nonexistent token"
       );
@@ -229,9 +241,9 @@ describe("Donation", function () {
     it("Should not be able to donate if date goal has passed", async function () {
       await network.provider.send("evm_increaseTime", [900]);
 
-      expect(donation.donateNative(0, { value: donationAmount })).to.be.revertedWith(
-        "Campaign has reached date goal"
-      );
+      expect(
+        donation.donateNative(0, { value: donationAmount })
+      ).to.be.revertedWith("Campaign has reached date goal");
     });
   });
 });
