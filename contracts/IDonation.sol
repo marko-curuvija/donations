@@ -5,6 +5,8 @@ interface IDonation {
     /**
      * Creates new campaign
      *
+     * @notice Only contract owner can call
+     *
      * @param _campaignOwner - The address of the owner for campaign
      * @param _name - Name of campaign
      * @param _description - Description of campaign
@@ -23,6 +25,8 @@ interface IDonation {
 
     /**
      * Donates native coins to desired campaign
+     *
+     * @notice payable
      *
      * @param _campaignId - Id of campaign which will receive donation
      *
@@ -50,6 +54,8 @@ interface IDonation {
 
     /**
      * Withdraws collected donations from campaign to owner of campaign
+     *
+     * @notice Only campaign admin can call
      *
      * @param _campaignId - Id of campaign from which donations will be withdrawn
      *

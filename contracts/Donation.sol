@@ -126,33 +126,6 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         updateCampaignWithDonation(msg.sender, campaign, donation, _campaignId);
     }
 
-    function sendCollectibleIfFirstDonation(Campaign storage _campaign, address _donor) private {
-        if (_campaign.donors[_donor] == 0) {
-            collectible.createCollectible(_donor);
-        }
-    }
-
-    function updateCampaignWithDonation(
-        address _donor,
-        Campaign storage _campaign,
-        uint _donation,
-        uint _campaignId
-    ) private {
-        _campaign.amount += _donation;
-        _campaign.donors[_donor] += _donation;
-        emit Donate(_donor, _campaignId, _donation);
-    }
-
-    function calculateChange(uint _donation, uint _collected, uint _priceGoal, uint _campaignId) private returns(uint) {
-        uint change = 0;
-        if (_collected + _donation > _priceGoal) {
-            change = _donation - (_priceGoal - _collected);
-            emit PriceGoalReached(_campaignId, _priceGoal);
-        }
-
-        return change;
-    }
-
     /// @inheritdoc IDonation
     function withdraw(uint _campaignId) public override nonReentrant {
         Campaign storage campaign = campaigns[_campaignId];
@@ -204,6 +177,33 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         });
 
         amountOut = swapRouter.exactInput(params);
+    }
+
+    function sendCollectibleIfFirstDonation(Campaign storage _campaign, address _donor) private {
+        if (_campaign.donors[_donor] == 0) {
+            collectible.createCollectible(_donor);
+        }
+    }
+
+    function updateCampaignWithDonation(
+        address _donor,
+        Campaign storage _campaign,
+        uint _donation,
+        uint _campaignId
+    ) private {
+        _campaign.amount += _donation;
+        _campaign.donors[_donor] += _donation;
+        emit Donate(_donor, _campaignId, _donation);
+    }
+
+    function calculateChange(uint _donation, uint _collected, uint _priceGoal, uint _campaignId) private returns(uint) {
+        uint change = 0;
+        if (_collected + _donation > _priceGoal) {
+            change = _donation - (_priceGoal - _collected);
+            emit PriceGoalReached(_campaignId, _priceGoal);
+        }
+
+        return change;
     }
 
     receive() external payable {
