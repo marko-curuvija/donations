@@ -82,12 +82,8 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
     function donateNative(uint _campaignId) public override payable goalNotReached(_campaignId) valueAboveZero(msg.value) {
         Campaign storage campaign = campaigns[_campaignId];
         uint donation = msg.value;
-        uint change = calculateChange(msg.value, campaign.amount, campaign.priceGoal, _campaignId);
-        if ( change > 0 ) {
-            donation -= change;
-            (bool sent,) = msg.sender.call{value : change}("");
-            require(sent, "Failed to send Ether");
-        }
+        uint change = calculateAndReturnChange(msg.value, campaign.amount, campaign.priceGoal, _campaignId);
+        donation -= change;
         sendCollectibleIfFirstDonation(campaign, msg.sender);
         updateCampaignWithDonation(msg.sender, campaign, donation, _campaignId);
     }
@@ -109,18 +105,8 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
             _amount,
             _deadline
         );
-        uint change = calculateChange(donation, campaign.amount, campaign.priceGoal, _campaignId);
-        if ( change > 0 ) {
-            donation -= change;
-            _swapTokens(
-                _path,
-                wethAddress,
-                address(this),
-                msg.sender,
-                change,
-                _deadline
-            );
-        }
+        uint change = calculateAndReturnChange(donation, campaign.amount, campaign.priceGoal, _campaignId);
+        donation -= change;
         IPeripheryPayments(address(swapRouter)).unwrapWETH9(donation, address(this));
         sendCollectibleIfFirstDonation(campaign, msg.sender);
         updateCampaignWithDonation(msg.sender, campaign, donation, _campaignId);
@@ -196,13 +182,14 @@ contract Donation is IDonation, Ownable, ReentrancyGuard {
         emit Donate(_donor, _campaignId, _donation);
     }
 
-    function calculateChange(uint _donation, uint _collected, uint _priceGoal, uint _campaignId) private returns(uint) {
+    function calculateAndReturnChange(uint _donation, uint _collected, uint _priceGoal, uint _campaignId) private returns(uint) {
         uint change = 0;
         if (_collected + _donation > _priceGoal) {
             change = _donation - (_priceGoal - _collected);
             emit PriceGoalReached(_campaignId, _priceGoal);
         }
-
+        (bool sent,) = msg.sender.call{value : change}("");
+        require(sent, "Failed to send Ether");
         return change;
     }
 

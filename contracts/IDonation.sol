@@ -37,6 +37,8 @@ interface IDonation {
     /**
      * Donates non native tokens to campaign
      *
+     * @notice if donation is bigger than needed, change will be returned in ether
+     *
      * @param _tokenAddress - Address of ERC20 token that will be donated
      * @param _amount - Amount of tokens that will be donated
      * @param _deadline - UNIX timestamp of deadline for swap to happen
